@@ -21,6 +21,7 @@ package conn
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -30,7 +31,10 @@ import (
 type StdNetBindTcp struct {
 	mu sync.Mutex
 
+	useTls        bool
 	tcp           *net.TCPConn
+	tls           *tls.Conn
+	tlsError      error
 	endpoint      *StdNetEndpoint
 	currentPacket *bytes.Reader
 
@@ -38,8 +42,15 @@ type StdNetBindTcp struct {
 }
 
 //goland:noinspection GoUnusedExportedFunction
-func NewStdNetBindTcp() Bind {
-	return &StdNetBindTcp{tunsafe: NewTunSafeData()}
+func CreateStdNetBind(socketType string) Bind {
+	switch socketType {
+	case "tcp":
+		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: false}
+	case "tls":
+		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: true}
+	default:
+		return NewStdNetBind()
+	}
 }
 
 func (bind *StdNetBindTcp) ParseEndpoint(s string) (Endpoint, error) {
@@ -70,6 +81,19 @@ func dialTcp(network string, IP net.IP, port int, listenPort int) (*net.TCPConn,
 	return conn, taddr.Port, nil
 }
 
+func (bind *StdNetBindTcp) upgradeToTls() {
+	tlsConf := &tls.Config{
+		InsecureSkipVerify: true, //TODO: proper setup
+	}
+
+	conn := tls.Client(bind.tcp, tlsConf)
+	err := conn.Handshake()
+	if err != nil {
+		bind.tlsError = err
+	}
+	bind.tls = conn
+}
+
 func (bind *StdNetBindTcp) Open(uport uint16) ([]ReceiveFunc, uint16, error) {
 	bind.mu.Lock()
 	defer bind.mu.Unlock()
@@ -88,7 +112,7 @@ func (bind *StdNetBindTcp) Open(uport uint16) ([]ReceiveFunc, uint16, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	fns = append(fns, bind.makeReceiveTCP(tcp))
+	fns = append(fns, bind.makeReceiveFunc())
 	bind.tcp = tcp
 	return fns, uint16(port), nil
 }
@@ -98,6 +122,10 @@ func (bind *StdNetBindTcp) Close() error {
 	defer bind.mu.Unlock()
 
 	var err error
+	if bind.tls != nil {
+		err = bind.tls.Close()
+		bind.tls = nil
+	}
 	if bind.tcp != nil {
 		err = bind.tcp.Close()
 		bind.tcp = nil
@@ -105,10 +133,28 @@ func (bind *StdNetBindTcp) Close() error {
 	return err
 }
 
-func (bind *StdNetBindTcp) makeReceiveTCP(conn *net.TCPConn) ReceiveFunc {
+func (bind *StdNetBindTcp) getConn() (net.Conn, error) {
+	bind.mu.Lock()
+	defer bind.mu.Unlock()
+
+	if !bind.useTls {
+		return bind.tcp, nil
+	}
+	if bind.tls == nil && bind.tlsError == nil {
+		bind.upgradeToTls()
+	}
+	return bind.tls, bind.tlsError
+}
+
+func (bind *StdNetBindTcp) makeReceiveFunc() ReceiveFunc {
 	return func(buff []byte) (int, Endpoint, error) {
 		var err error
 		if bind.currentPacket == nil || bind.currentPacket.Len() == 0 {
+			var conn net.Conn
+			conn, err = bind.getConn()
+			if err != nil {
+				return 0, bind.endpoint, err
+			}
 			err = bind.readNextPacket(conn)
 			if err != nil {
 				return 0, bind.endpoint, err
@@ -122,7 +168,7 @@ func (bind *StdNetBindTcp) makeReceiveTCP(conn *net.TCPConn) ReceiveFunc {
 	}
 }
 
-func (bind *StdNetBindTcp) readNextPacket(conn *net.TCPConn) error {
+func (bind *StdNetBindTcp) readNextPacket(conn net.Conn) error {
 	tunSafeHeader := make([]byte, tunSafeHeaderSize)
 	_, err := io.ReadFull(conn, tunSafeHeader)
 	if err != nil {
@@ -146,9 +192,10 @@ func (bind *StdNetBindTcp) readNextPacket(conn *net.TCPConn) error {
 }
 
 func (bind *StdNetBindTcp) Send(buff []byte, endpoint Endpoint) error {
-	bind.mu.Lock()
-	conn := bind.tcp
-	bind.mu.Unlock()
+	conn, err := bind.getConn()
+	if err != nil {
+		return err
+	}
 
 	// As single tcp socket can send only to single destination. We assume endpoint passed to ParseEndpoint will be
 	// the same.
@@ -157,7 +204,7 @@ func (bind *StdNetBindTcp) Send(buff []byte, endpoint Endpoint) error {
 	}
 
 	tunSafePacket := bind.tunsafe.wgToTunSafe(buff)
-	_, err := conn.Write(tunSafePacket)
+	_, err = conn.Write(tunSafePacket)
 	return err
 }
 
