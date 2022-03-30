@@ -3,6 +3,7 @@ module golang.zx2c4.com/wireguard
 go 1.19
 
 require (
+	github.com/refraction-networking/utls v1.0.0
 	golang.org/x/crypto v0.0.0-20220315160706-3147a52a75dd
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 	golang.org/x/sys v0.2.0

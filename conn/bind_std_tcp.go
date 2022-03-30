@@ -21,8 +21,8 @@ package conn
 
 import (
 	"bytes"
-	"crypto/tls"
 	"errors"
+	"github.com/refraction-networking/utls"
 	"io"
 	"net"
 	"sync"
@@ -33,7 +33,7 @@ type StdNetBindTcp struct {
 
 	useTls        bool
 	tcp           *net.TCPConn
-	tls           *tls.Conn
+	tls           *tls.UConn
 	tlsError      error
 	endpoint      *StdNetEndpoint
 	currentPacket *bytes.Reader
@@ -83,10 +83,11 @@ func dialTcp(network string, IP net.IP, port int, listenPort int) (*net.TCPConn,
 
 func (bind *StdNetBindTcp) upgradeToTls() {
 	tlsConf := &tls.Config{
-		InsecureSkipVerify: true, //TODO: proper setup
+		InsecureSkipVerify: true,
+		ServerName:         randomServerName(),
 	}
 
-	conn := tls.Client(bind.tcp, tlsConf)
+	conn := tls.UClient(bind.tcp, tlsConf, tls.HelloChrome_Auto)
 	err := conn.Handshake()
 	if err != nil {
 		bind.tlsError = err
