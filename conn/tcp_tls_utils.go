@@ -1,14 +1,32 @@
-/* SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2022. Proton AG
  *
- * Copyright (C) 2017-2021 WireGuard LLC. All Rights Reserved.
+ * This file is part of ProtonVPN.
+ *
+ * ProtonVPN is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * ProtonVPN is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package conn
 
 import (
 	"bytes"
+	cryptoRand "crypto/rand"
 	"encoding/binary"
 	"errors"
+	"math/big"
+	"math/rand"
+	"time"
 )
 
 var wgDataPrefix = []byte{4, 0, 0, 0}
@@ -26,7 +44,8 @@ type TunSafeData struct {
 	wgRecvCount  uint64
 }
 
-var topLevelDomains = []string{".com", ".org", ".net"}
+var topLevelDomains = []string{"com", "net", "org", "it", "fr", "me", "us", "ru", "cn", "es", "tr"}
+var domains = []string{"google", "apple", "netflix", "dropbox", "spotify", "ubs", "css", "github", "gitlab", "ibm", "pictet", "tesla", "spacex", "sonarqube", "jenkins", "acme", "novartis", "nestle", "monsanto", "vitol"}
 
 func NewTunSafeData() *TunSafeData {
 	return &TunSafeData{
@@ -126,4 +145,21 @@ func wgToTunSafeData(wgPacket []byte) []byte {
 	copy(result[tunSafeHeaderSize:], wgPacket[wgDataHeaderSize:])
 
 	return result
+}
+
+func randomServerName() string {
+	return randItem(domains) + "." + randItem(topLevelDomains)
+}
+
+func randItem(list []string) string {
+	return list[randInt(len(list))]
+}
+
+func randInt(n int) int {
+	size, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(n)))
+	if err == nil {
+		return int(size.Int64())
+	}
+	rand.Seed(time.Now().UnixNano())
+	return rand.Intn(n)
 }
