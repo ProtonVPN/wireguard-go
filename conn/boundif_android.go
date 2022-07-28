@@ -34,17 +34,7 @@ func (bind *StdNetBind) PeekLookAtSocketFd6() (fd int, err error) {
 }
 
 func (bind *StdNetBindTcp) PeekLookAtSocketFd4() (fd int, err error) {
-	sysconn, err := bind.tcp.SyscallConn()
-	if err != nil {
-		return -1, err
-	}
-	err = sysconn.Control(func(f uintptr) {
-		fd = int(f)
-	})
-	if err != nil {
-		return -1, err
-	}
-	return
+	return -1, err
 }
 
 func (bind *StdNetBindTcp) PeekLookAtSocketFd6() (fd int, err error) {
