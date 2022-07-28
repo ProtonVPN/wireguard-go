@@ -61,6 +61,11 @@ func parseTunSafeHeader(header []byte) (byte, int) {
 	return tunSafeType, size
 }
 
+func (tunSafe *TunSafeData) clear() {
+	tunSafe.wgSendCount = 0
+	tunSafe.wgRecvCount = 0
+}
+
 func (tunSafe *TunSafeData) writeWgHeader(wgPacket []byte) {
 	buffer := new(bytes.Buffer)
 	buffer.Grow(len(tunSafe.wgRecvPrefix) + binary.Size(tunSafe.wgRecvCount))

@@ -79,6 +79,7 @@ func (peer *Peer) timersActive() bool {
 
 func expiredRetransmitHandshake(peer *Peer) {
 	if atomic.LoadUint32(&peer.timers.handshakeAttempts) > MaxTimerHandshakes {
+		peer.device.handshakeStateChan <- HandshakeFail
 		peer.device.log.Verbosef("%s - Handshake did not complete after %d attempts, giving up", peer, MaxTimerHandshakes+2)
 
 		if peer.timersActive() {
@@ -98,6 +99,7 @@ func expiredRetransmitHandshake(peer *Peer) {
 		}
 	} else {
 		atomic.AddUint32(&peer.timers.handshakeAttempts, 1)
+		peer.device.handshakeStateChan <- HandshakeFail
 		peer.device.log.Verbosef("%s - Handshake did not complete after %d seconds, retrying (try %d)", peer, int(RekeyTimeout.Seconds()), atomic.LoadUint32(&peer.timers.handshakeAttempts)+1)
 
 		/* We clear the endpoint address src address, in case this is the cause of trouble. */

@@ -22,11 +22,15 @@ package conn
 import (
 	"bytes"
 	"errors"
-	"github.com/refraction-networking/utls"
 	"io"
 	"net"
 	"sync"
+	"time"
+
+	tls "github.com/refraction-networking/utls"
 )
+
+var lastErrorTimestamp time.Time
 
 type StdNetBindTcp struct {
 	mu sync.Mutex
@@ -34,20 +38,21 @@ type StdNetBindTcp struct {
 	useTls        bool
 	tcp           *net.TCPConn
 	tls           *tls.UConn
-	tlsError      error
 	endpoint      *StdNetEndpoint
 	currentPacket *bytes.Reader
+	closed        bool
 	log           *Logger
+	errorChan     chan<- error
 
 	tunsafe *TunSafeData
 }
 
 //goland:noinspection GoUnusedExportedFunction
-func CreateStdNetBind(socketType string, log *Logger) Bind {
+func CreateStdNetBind(socketType string, log *Logger, errorChan chan<- error) Bind {
 	if socketType == "udp" {
 		return NewStdNetBind()
 	} else {
-		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log}
+		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log, errorChan: errorChan}
 	}
 }
 
@@ -60,11 +65,16 @@ func (bind *StdNetBindTcp) ParseEndpoint(s string) (Endpoint, error) {
 	return endpoint, err
 }
 
-func dialTcp(network string, IP net.IP, port int, listenPort int) (*net.TCPConn, int, error) {
-	conn, err := net.DialTCP(network, &net.TCPAddr{Port: listenPort}, &net.TCPAddr{IP: IP, Port: port})
+func dialTcp(IP net.IP, port int) (*net.TCPConn, int, error) {
+	dialer := net.Dialer{Timeout: 5 * time.Second}
+	addr := net.TCPAddr{IP: IP, Port: port}
+	netConn, err := dialer.Dial("tcp4", addr.String())
 	if err != nil {
 		return nil, 0, err
 	}
+
+	conn := netConn.(*net.TCPConn)
+	conn.SetLinger(0)
 
 	// Retrieve port.
 	laddr := conn.LocalAddr()
@@ -79,47 +89,66 @@ func dialTcp(network string, IP net.IP, port int, listenPort int) (*net.TCPConn,
 	return conn, taddr.Port, nil
 }
 
-func (bind *StdNetBindTcp) upgradeToTls() {
+func (bind *StdNetBindTcp) upgradeToTls() error {
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
 		ServerName:         randomServerName(),
 	}
 
 	conn := tls.UClient(bind.tcp, tlsConf, tls.HelloChrome_Auto)
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	bind.log.Verbosef("TLS: Starting handshake")
 	err := conn.Handshake()
-	if err != nil {
-		bind.tlsError = err
+	bind.log.Verbosef("TLS: Handshake result: %v", err)
+	conn.SetDeadline(time.Time{})
+	if err == nil {
+		bind.tls = conn
+	} else {
+		bind.onSocketError(err)
+		conn.Close()
 	}
-	bind.tls = conn
+	return err
 }
 
 func (bind *StdNetBindTcp) Open(uport uint16) ([]ReceiveFunc, uint16, error) {
 	bind.mu.Lock()
 	defer bind.mu.Unlock()
 
+	bind.log.Verbosef("TCP/TLS: Open %d", uport)
+	bind.closed = false
+	return []ReceiveFunc{bind.makeReceiveFunc()}, uport, nil
+}
+
+func (bind *StdNetBindTcp) initTcp() error {
 	var err error
 
 	if bind.tcp != nil {
-		return nil, 0, ErrBindAlreadyOpen
+		return ErrBindAlreadyOpen
 	}
 
-	port := int(uport)
 	var tcp *net.TCPConn
-	var fns []ReceiveFunc
 
-	tcp, port, err = dialTcp("tcp4", bind.endpoint.IP, bind.endpoint.Port, port)
+	tcp, _, err = dialTcp(bind.endpoint.IP, bind.endpoint.Port)
+	bind.log.Verbosef("TCP dial result: %v", err)
 	if err != nil {
-		return nil, 0, err
+		bind.onSocketError(err)
+		return err
 	}
-	fns = append(fns, bind.makeReceiveFunc())
 	bind.tcp = tcp
-	return fns, uint16(port), nil
+	return nil
 }
 
 func (bind *StdNetBindTcp) Close() error {
 	bind.mu.Lock()
 	defer bind.mu.Unlock()
 
+	bind.log.Verbosef("TCP/TLS: Close")
+	bind.closed = true
+	err := bind.closeInternal()
+	return err
+}
+
+func (bind *StdNetBindTcp) closeInternal() error {
 	var err error
 	if bind.tls != nil {
 		err = bind.tls.Close()
@@ -129,6 +158,7 @@ func (bind *StdNetBindTcp) Close() error {
 		err = bind.tcp.Close()
 		bind.tcp = nil
 	}
+	bind.tunsafe.clear()
 	return err
 }
 
@@ -136,13 +166,35 @@ func (bind *StdNetBindTcp) getConn() (net.Conn, error) {
 	bind.mu.Lock()
 	defer bind.mu.Unlock()
 
+	if bind.closed {
+		return nil, net.ErrClosed
+	}
+
+	conn, err := bind.getConnInternal()
+	if err != nil {
+		bind.closed = true
+	}
+	return conn, err
+}
+
+func (bind *StdNetBindTcp) getConnInternal() (net.Conn, error) {
+	if bind.tcp == nil {
+		err := bind.initTcp()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if !bind.useTls {
 		return bind.tcp, nil
 	}
-	if bind.tls == nil && bind.tlsError == nil {
-		bind.upgradeToTls()
+	if bind.tls == nil {
+		err := bind.upgradeToTls()
+		if err != nil {
+			bind.closeInternal()
+			return nil, err
+		}
 	}
-	return bind.tls, bind.tlsError
+	return bind.tls, nil
 }
 
 func (bind *StdNetBindTcp) makeReceiveFunc() ReceiveFunc {
@@ -152,15 +204,21 @@ func (bind *StdNetBindTcp) makeReceiveFunc() ReceiveFunc {
 			var conn net.Conn
 			conn, err = bind.getConn()
 			if err != nil {
+				bind.logError("recv getConn", err)
 				return 0, bind.endpoint, err
 			}
 			err = bind.readNextPacket(conn)
 			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					bind.onSocketError(err)
+					bind.logError("recv", err)
+				}
 				return 0, bind.endpoint, err
 			}
 		}
 		n, err := bind.currentPacket.Read(buff)
 		if err != nil {
+			bind.logError("read packet", err)
 			return n, bind.endpoint, err
 		}
 		return n, bind.endpoint, err
@@ -193,6 +251,7 @@ func (bind *StdNetBindTcp) readNextPacket(conn net.Conn) error {
 func (bind *StdNetBindTcp) Send(buff []byte, endpoint Endpoint) error {
 	conn, err := bind.getConn()
 	if err != nil {
+		bind.logError("send conn", err)
 		return err
 	}
 
@@ -204,9 +263,26 @@ func (bind *StdNetBindTcp) Send(buff []byte, endpoint Endpoint) error {
 
 	tunSafePacket := bind.tunsafe.wgToTunSafe(buff)
 	_, err = conn.Write(tunSafePacket)
+	if err != nil {
+		bind.onSocketError(err)
+		bind.logError("send", err)
+	}
 	return err
 }
 
 func (bind *StdNetBindTcp) SetMark(_ uint32) error {
 	return nil
+}
+
+func (bind *StdNetBindTcp) onSocketError(err error) {
+	if err != nil && !bind.closed {
+		bind.errorChan <- err
+	}
+}
+
+func (bind *StdNetBindTcp) logError(t string, err error) {
+	if time.Now().After(lastErrorTimestamp.Add(5 * time.Second)) {
+		lastErrorTimestamp = time.Now()
+		bind.log.Errorf("TCP/TLS error %s: %v", t, err)
+	}
 }

@@ -341,6 +341,7 @@ func (device *Device) RoutineHandshake(id int) {
 			// update endpoint
 			peer.SetEndpointFromPacket(elem.endpoint)
 
+			device.handshakeStateChan <- HandshakeSuccess
 			device.log.Verbosef("%v - Received handshake initiation", peer)
 			atomic.AddUint64(&peer.stats.rxBytes, uint64(len(elem.packet)))
 
@@ -369,6 +370,7 @@ func (device *Device) RoutineHandshake(id int) {
 			// update endpoint
 			peer.SetEndpointFromPacket(elem.endpoint)
 
+			device.handshakeStateChan <- HandshakeSuccess
 			device.log.Verbosef("%v - Received handshake response", peer)
 			atomic.AddUint64(&peer.stats.rxBytes, uint64(len(elem.packet)))
 
