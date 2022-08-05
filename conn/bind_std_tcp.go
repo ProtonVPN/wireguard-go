@@ -37,19 +37,17 @@ type StdNetBindTcp struct {
 	tlsError      error
 	endpoint      *StdNetEndpoint
 	currentPacket *bytes.Reader
+	log           *Logger
 
 	tunsafe *TunSafeData
 }
 
 //goland:noinspection GoUnusedExportedFunction
-func CreateStdNetBind(socketType string) Bind {
-	switch socketType {
-	case "tcp":
-		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: false}
-	case "tls":
-		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: true}
-	default:
+func CreateStdNetBind(socketType string, log *Logger) Bind {
+	if socketType == "udp" {
 		return NewStdNetBind()
+	} else {
+		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log}
 	}
 }
 

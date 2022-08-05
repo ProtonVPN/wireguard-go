@@ -45,6 +45,11 @@ type Bind interface {
 	ParseEndpoint(s string) (Endpoint, error)
 }
 
+type Logger struct {
+	Verbosef func(format string, args ...interface{})
+	Errorf   func(format string, args ...interface{})
+}
+
 // BindSocketToInterface is implemented by Bind objects that support being
 // tied to a single network interface. Used by wireguard-windows.
 type BindSocketToInterface interface {
