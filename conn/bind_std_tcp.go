@@ -101,6 +101,11 @@ func (bind *StdNetBindTcp) upgradeToTls() error {
 	err := conn.Handshake()
 	bind.log.Verbosef("TLS: Handshake result: %v", err)
 	conn.SetDeadline(time.Time{})
+
+	// On some devices (e.g. Samsung S21 FE) we see first WireGuard handshake failing on TLS socket and adding small
+	// delay seems to fix that - issue is likely with timing on the server side, but couldn't find server-side fix.
+	time.Sleep(100 * time.Millisecond)
+
 	if err == nil {
 		bind.tls = conn
 	} else {
