@@ -11,9 +11,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"strconv"
 
 	"golang.zx2c4.com/wireguard/conn"
 )
+
+var nextPeerID uint32 = 0
 
 type Peer struct {
 	isRunning    AtomicBool
@@ -61,12 +64,15 @@ type Peer struct {
 	cookieGenerator             CookieGenerator
 	trieEntries                 list.List
 	persistentKeepaliveInterval uint32 // accessed atomically
+	peerID uint32 // incremented atomically
 }
 
 func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	if device.isClosed() {
 		return nil, errors.New("device closed")
 	}
+
+	atomic.AddUint32(&nextPeerID, 1)
 
 	// lock resources
 	device.staticIdentity.RLock()
@@ -90,6 +96,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.queue.outbound = newAutodrainingOutboundQueue(device)
 	peer.queue.inbound = newAutodrainingInboundQueue(device)
 	peer.queue.staged = make(chan *QueueOutboundElement, QueueStagedSize)
+	peer.peerID = atomic.LoadUint32(&nextPeerID)
 
 	// map public key
 	_, ok := device.peers.keyMap[pk]
@@ -164,7 +171,7 @@ func (peer *Peer) String() string {
 	b[second+1] = b64((src[30] >> 2) & 63)
 	b[second+2] = b64(((src[30] << 4) | (src[31] >> 4)) & 63)
 	b[second+3] = b64((src[31] << 2) & 63)
-	return string(b)
+	return string(b) + " (" + strconv.FormatUint(uint64(peer.peerID), 10) + ")"
 }
 
 func (peer *Peer) Start() {
