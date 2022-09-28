@@ -1,0 +1,19 @@
+default:
+  image: ${CI_REGISTRY}/android/shared/docker-android/ndk:v1.0.0
+  before_script:
+    - if [[ -f /load-env.sh ]]; then source /load-env.sh; fi
+
+sync-wireguard-go:
+  rules:
+    - if: '$OPENSOURCE_GO'
+      when: always
+    - when: never
+      allow_failure: true
+  before_script:
+    - !reference [ default, before_script ]
+    - apt update && apt-get install -y connect-proxy
+  script:
+    - git clone "$CI_REPOSITORY_URL" --branch "$CI_COMMIT_BRANCH" _APP_CLONE;
+    - cd _APP_CLONE
+    - git remote add public git@github.com:ProtonVPN/wireguard-go.git
+    - git push public "$CI_COMMIT_BRANCH" -f
