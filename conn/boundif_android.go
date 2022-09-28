@@ -32,3 +32,11 @@ func (bind *StdNetBind) PeekLookAtSocketFd6() (fd int, err error) {
 	}
 	return
 }
+
+func (bind *StdNetBindTcp) PeekLookAtSocketFd4() (fd int, err error) {
+	return -1, err
+}
+
+func (bind *StdNetBindTcp) PeekLookAtSocketFd6() (fd int, err error) {
+	return -1, err
+}

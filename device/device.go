@@ -86,7 +86,17 @@ type Device struct {
 	ipcMutex sync.RWMutex
 	closed   chan struct{}
 	log      *Logger
+
+	handshakeStateChan chan<- HandshakeState
 }
+
+type HandshakeState int
+
+const (
+	HandshakeInit    HandshakeState = iota
+	HandshakeSuccess                = iota
+	HandshakeFail                   = iota
+)
 
 // deviceState represents the state of a Device.
 // There are three states: down, up, closed.
@@ -167,6 +177,7 @@ func (device *Device) changeState(want deviceState) (err error) {
 // upLocked attempts to bring the device up and reports whether it succeeded.
 // The caller must hold device.state.mu and is responsible for updating device.state.state.
 func (device *Device) upLocked() error {
+	device.handshakeStateChan <- HandshakeInit
 	if err := device.BindUpdate(); err != nil {
 		device.log.Errorf("Unable to update bind: %v", err)
 		return err
@@ -274,9 +285,10 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 	return nil
 }
 
-func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
+func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger, handshakeStateChan chan<- HandshakeState) *Device {
 	device := new(Device)
 	device.state.state = uint32(deviceStateDown)
+	device.handshakeStateChan = handshakeStateChan
 	device.closed = make(chan struct{})
 	device.log = logger
 	device.net.bind = bind
@@ -374,6 +386,7 @@ func (device *Device) Close() {
 
 	device.log.Verbosef("Device closed")
 	close(device.closed)
+	close(device.handshakeStateChan)
 }
 
 func (device *Device) Wait() chan struct{} {
