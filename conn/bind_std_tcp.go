@@ -68,7 +68,7 @@ func (bind *StdNetBindTcp) ParseEndpoint(s string) (Endpoint, error) {
 func dialTcp(IP net.IP, port int) (*net.TCPConn, int, error) {
 	dialer := net.Dialer{Timeout: 5 * time.Second}
 	addr := net.TCPAddr{IP: IP, Port: port}
-	netConn, err := dialer.Dial("tcp4", addr.String())
+	netConn, err := dialer.Dial("tcp", addr.String())
 	if err != nil {
 		return nil, 0, err
 	}
