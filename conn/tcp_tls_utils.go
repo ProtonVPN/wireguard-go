@@ -44,8 +44,7 @@ type TunSafeData struct {
 	wgRecvCount  uint64
 }
 
-var topLevelDomains = []string{"com", "net", "org", "it", "fr", "me", "us", "ru", "cn", "es", "tr"}
-var domains = []string{"google", "apple", "netflix", "dropbox", "spotify", "ubs", "css", "github", "gitlab", "ibm", "pictet", "tesla", "spacex", "sonarqube", "jenkins", "acme", "novartis", "nestle", "monsanto", "vitol"}
+var topLevelDomains = []string{"com", "net", "org", "it", "fr", "me", "ru", "cn", "es", "tr", "top", "xyz", "info"}
 
 func NewTunSafeData() *TunSafeData {
 	return &TunSafeData{
@@ -153,7 +152,13 @@ func wgToTunSafeData(wgPacket []byte) []byte {
 }
 
 func randomServerName() string {
-	return randItem(domains) + "." + randItem(topLevelDomains)
+	charNum := int('z') - int('a') + 1
+	size := 3 + randInt(10)
+	name := make([]byte, size)
+	for i := range name {
+		name[i] = byte(int('a') + randInt(charNum))
+	}
+	return string(name) + "." + randItem(topLevelDomains)
 }
 
 func randItem(list []string) string {
