@@ -76,9 +76,9 @@ type BaseDevice interface {
 //goland:noinspection GoUnusedExportedFunction
 func NewWireGuardStateManager(log *Logger, transmission string) *WireGuardStateManager {
 	return &WireGuardStateManager{
-		networkAvailableChan: make(chan bool, 1),
-		SocketErrChan:        make(chan error, 1),
-		HandshakeStateChan:   make(chan HandshakeState, 1),
+		networkAvailableChan: make(chan bool, 100),
+		SocketErrChan:        make(chan error, 100),
+		HandshakeStateChan:   make(chan HandshakeState, 100),
 		closeChan:            make(chan bool, 1),
 		stateChan:            make(chan WireGuardState, 1),
 		transmission:         transmission,
@@ -145,22 +145,20 @@ func (man *WireGuardStateManager) onNetworkAvailabilityChange(device BaseDevice,
 	}
 	if available && wasAvailable == nil {
 		man.log.Verbosef("StateManager: network on")
-		go func() {
-			man.setActive(device, true)
-			man.startedTimestamp = timeNow()
-		}()
+		man.setActive(device, true)
+		man.startedTimestamp = timeNow()
 	} else if available && *wasAvailable && !man.startedTimestamp.IsZero() &&
 		timeNow().After(man.startedTimestamp.Add(5*time.Second)) {
 		// Ignore network changes at the very beginning of connection as those might be false positive
 		// (VPN tunnel opening)
 		man.log.Verbosef("StateManager: network change detected")
-		go man.maybeRestart(device)
+		man.maybeRestart(device)
 	} else if available && !*wasAvailable {
 		man.log.Verbosef("StateManager: network back")
-		go man.setActive(device, true)
+		man.setActive(device, true)
 	} else if !available && wasAvailable != nil && *wasAvailable {
 		man.log.Verbosef("StateManager: network gone")
-		go man.setActive(device, false)
+		man.setActive(device, false)
 	}
 }
 
@@ -187,7 +185,7 @@ func (man *WireGuardStateManager) handleSocketErr(device BaseDevice, err error) 
 		if strings.Contains(errStr, "broken pipe") ||
 			strings.Contains(errStr, "connection reset by peer") {
 			man.log.Errorf("StateManager: %s", errStr)
-			go man.maybeRestart(device)
+			man.maybeRestart(device)
 		}
 	}
 }
@@ -200,7 +198,7 @@ func (man *WireGuardStateManager) handleHandshakeState(device BaseDevice, state 
 		man.postState(WireGuardConnected)
 	case HandshakeFail:
 		man.postState(WireGuardError)
-		go man.maybeRestart(device)
+		man.maybeRestart(device)
 	}
 }
 
