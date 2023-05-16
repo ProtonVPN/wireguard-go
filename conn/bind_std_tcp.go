@@ -24,6 +24,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -57,18 +58,16 @@ func CreateStdNetBind(socketType string, log *Logger, errorChan chan<- error) Bi
 }
 
 func (bind *StdNetBindTcp) ParseEndpoint(s string) (Endpoint, error) {
-	addr, err := parseEndpoint(s)
-	endpoint := (*StdNetEndpoint)(addr)
+	e, err := netip.ParseAddrPort(s)
 	if err == nil {
-		bind.endpoint = endpoint
+		bind.endpoint = (*StdNetEndpoint)(&e)
 	}
-	return endpoint, err
+	return asEndpoint(e), err
 }
 
-func dialTcp(IP net.IP, port int) (*net.TCPConn, int, error) {
+func dialTcp(addr string) (*net.TCPConn, int, error) {
 	dialer := net.Dialer{Timeout: 5 * time.Second}
-	addr := net.TCPAddr{IP: IP, Port: port}
-	netConn, err := dialer.Dial("tcp4", addr.String())
+	netConn, err := dialer.Dial("tcp", addr)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -133,7 +132,7 @@ func (bind *StdNetBindTcp) initTcp() error {
 
 	var tcp *net.TCPConn
 
-	tcp, _, err = dialTcp(bind.endpoint.IP, bind.endpoint.Port)
+	tcp, _, err = dialTcp(bind.endpoint.DstToString())
 	bind.log.Verbosef("TCP dial result: %v", err)
 	if err != nil {
 		bind.onSocketError(err)
@@ -262,7 +261,8 @@ func (bind *StdNetBindTcp) Send(buff []byte, endpoint Endpoint) error {
 
 	// As single tcp socket can send only to single destination. We assume endpoint passed to ParseEndpoint will be
 	// the same.
-	if endpoint != bind.endpoint {
+	boundEndpoint := asEndpoint((netip.AddrPort)(*bind.endpoint))
+	if endpoint != boundEndpoint {
 		return errors.New("StdNetBindTcp.Send endpoints mismatch")
 	}
 
