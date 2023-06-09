@@ -7,6 +7,7 @@ package conn
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -23,9 +24,13 @@ type StdNetBind struct {
 	ipv6       *net.UDPConn
 	blackhole4 bool
 	blackhole6 bool
+
+	protectSocket func(fd int) int
 }
 
-func NewStdNetBind() Bind { return &StdNetBind{} }
+func NewStdNetBind(protectSocket func(fd int) int) Bind {
+	return &StdNetBind{protectSocket: protectSocket}
+}
 
 type StdNetEndpoint netip.AddrPort
 
@@ -125,7 +130,37 @@ again:
 	if len(fns) == 0 {
 		return nil, 0, syscall.EAFNOSUPPORT
 	}
+
+	err = bind.protectSockets()
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return fns, uint16(port), nil
+}
+
+func (bind *StdNetBind) protectSockets() error {
+	if bind.ipv4 != nil {
+		fd, err := bind.PeekLookAtSocketFd4()
+		if err != nil {
+			return err
+		}
+		status := bind.protectSocket(fd)
+		if status < 0 {
+			return fmt.Errorf("Failed to protect socket: status=%d", status)
+		}
+	}
+	if bind.ipv6 != nil {
+		fd, err := bind.PeekLookAtSocketFd6()
+		if err != nil {
+			return err
+		}
+		status := bind.protectSocket(fd)
+		if status < 0 {
+			return fmt.Errorf("Failed to protect socket: status=%d", status)
+		}
+	}
+	return nil
 }
 
 func (bind *StdNetBind) Close() error {

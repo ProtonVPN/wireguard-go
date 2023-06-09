@@ -22,10 +22,12 @@ package conn
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"sync"
+	"syscall"
 	"time"
 
 	tls "github.com/refraction-networking/utls"
@@ -44,16 +46,17 @@ type StdNetBindTcp struct {
 	closed        bool
 	log           *Logger
 	errorChan     chan<- error
+	protectSocket func(fd int) int
 
 	tunsafe *TunSafeData
 }
 
 //goland:noinspection GoUnusedExportedFunction
-func CreateStdNetBind(socketType string, log *Logger, errorChan chan<- error) Bind {
+func CreateStdNetBind(socketType string, log *Logger, errorChan chan<- error, protectSocket func(fd int) int) Bind {
 	if socketType == "udp" {
-		return NewStdNetBind()
+		return NewStdNetBind(protectSocket)
 	} else {
-		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log, errorChan: errorChan}
+		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log, errorChan: errorChan, protectSocket: protectSocket}
 	}
 }
 
@@ -65,9 +68,19 @@ func (bind *StdNetBindTcp) ParseEndpoint(s string) (Endpoint, error) {
 	return asEndpoint(e), err
 }
 
-func dialTcp(addr string) (*net.TCPConn, int, error) {
-	dialer := net.Dialer{Timeout: 5 * time.Second}
+func dialTcp(addr string, protectSocket func(fd int) int) (*net.TCPConn, int, error) {
+	protectStatus := -1
+	control := func(network, address string, conn syscall.RawConn) error {
+		return conn.Control(func(fd uintptr) {
+			protectStatus = protectSocket(int(fd))
+		})
+	}
+
+	dialer := net.Dialer{Timeout: 5 * time.Second, Control: control}
 	netConn, err := dialer.Dial("tcp", addr)
+	if protectStatus < 0 {
+		return nil, 0, fmt.Errorf("Failed to protect socket: status=%d", protectStatus)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -132,7 +145,7 @@ func (bind *StdNetBindTcp) initTcp() error {
 
 	var tcp *net.TCPConn
 
-	tcp, _, err = dialTcp(bind.endpoint.DstToString())
+	tcp, _, err = dialTcp(bind.endpoint.DstToString(), bind.protectSocket)
 	bind.log.Verbosef("TCP dial result: %v", err)
 	if err != nil {
 		bind.onSocketError(err)
