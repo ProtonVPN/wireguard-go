@@ -6,7 +6,9 @@
 package device
 
 import (
+	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -89,6 +91,7 @@ type Device struct {
 	log      *Logger
 
 	handshakeStateChan chan<- HandshakeState
+	allowedSrcAddresses []net.IP
 }
 
 type HandshakeState int
@@ -290,10 +293,18 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 	return nil
 }
 
-func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger, handshakeStateChan chan<- HandshakeState) *Device {
+func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger, handshakeStateChan chan<- HandshakeState, allowedSrcAddresses string) *Device {
 	device := new(Device)
 	device.state.state.Store(uint32(deviceStateDown))
 	device.handshakeStateChan = handshakeStateChan
+	var allowedSources = strings.Split(allowedSrcAddresses, ",")
+	device.allowedSrcAddresses = make([]net.IP, len(allowedSources))
+	for i, source := range allowedSources {
+		ip := net.ParseIP(source)
+		if ip != nil {
+			device.allowedSrcAddresses[i] = ip
+		}
+	}
 	device.closed = make(chan struct{})
 	device.log = logger
 	device.net.bind = bind

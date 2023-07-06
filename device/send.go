@@ -247,12 +247,14 @@ func (device *Device) RoutineReadFromTUN() {
 		// lookup peer
 
 		var peer *Peer
+		var src []byte
 		switch elem.packet[0] >> 4 {
 		case ipv4.Version:
 			if len(elem.packet) < ipv4.HeaderLen {
 				continue
 			}
 			dst := elem.packet[IPv4offsetDst : IPv4offsetDst+net.IPv4len]
+			src = elem.packet[IPv4offsetSrc : IPv4offsetSrc+net.IPv4len]
 			peer = device.allowedips.Lookup(dst)
 
 		case ipv6.Version:
@@ -260,6 +262,7 @@ func (device *Device) RoutineReadFromTUN() {
 				continue
 			}
 			dst := elem.packet[IPv6offsetDst : IPv6offsetDst+net.IPv6len]
+			src = elem.packet[IPv6offsetSrc : IPv6offsetSrc+net.IPv6len]
 			peer = device.allowedips.Lookup(dst)
 
 		default:
@@ -269,12 +272,28 @@ func (device *Device) RoutineReadFromTUN() {
 		if peer == nil {
 			continue
 		}
+
+		// Drop packets with unexpected src IP.
+		if device.allowedSrcAddresses != nil && device.isUnexpectedSrcIP(src) {
+			//device.log.Verbosef("Dropping packet with unexpected src IP: %v (allowed = %v)", src, device.allowedSrcAddresses)
+			continue
+		}
+
 		if peer.isRunning.Load() {
 			peer.StagePacket(elem)
 			elem = nil
 			peer.SendStagedPackets()
 		}
 	}
+}
+
+func (device *Device) isUnexpectedSrcIP(src []byte) bool {
+	for _, allowed := range device.allowedSrcAddresses {
+		if allowed.Equal(src) {
+			return false
+		}
+	}
+	return true
 }
 
 func (peer *Peer) StagePacket(elem *QueueOutboundElement) {
