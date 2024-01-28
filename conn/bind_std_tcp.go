@@ -26,11 +26,19 @@ import (
 	"net"
 	"sync"
 	"time"
+	"sync/atomic"
 
 	tls "github.com/refraction-networking/utls"
 )
 
 var lastErrorTimestamp time.Time
+
+var nextHelloIdx atomic.Int32
+var hellos = []tls.ClientHelloID {
+	tls.HelloChrome_Auto,
+	tls.HelloChrome_120_PQ,
+	tls.HelloChrome_115_PQ,
+}
 
 type StdNetBindTcp struct {
 	mu sync.Mutex
@@ -95,7 +103,7 @@ func (bind *StdNetBindTcp) upgradeToTls() error {
 		ServerName:         randomServerName(),
 	}
 
-	conn := tls.UClient(bind.tcp, tlsConf, tls.HelloChrome_Auto)
+	conn := tls.UClient(bind.tcp, tlsConf, hellos[nextHelloIdx.Load()])
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	bind.log.Verbosef("TLS: Starting handshake")
 	err := conn.Handshake()
@@ -109,6 +117,8 @@ func (bind *StdNetBindTcp) upgradeToTls() error {
 	if err == nil {
 		bind.tls = conn
 	} else {
+		newHelloIdx := (nextHelloIdx.Load() + 1) % int32(len(hellos))
+		nextHelloIdx.Store(newHelloIdx) // move to next hello on error
 		bind.onSocketError(err)
 		conn.Close()
 	}
