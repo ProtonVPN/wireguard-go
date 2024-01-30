@@ -1,9 +1,11 @@
 default:
-  image: ${CI_REGISTRY}/android/shared/docker-android/ndk:v1.1.0
+  image: ${CI_REGISTRY}/android/shared/docker-android/oci-ndk:v2.0.0
   before_script:
     - if [[ -f /load-env.sh ]]; then source /load-env.sh; fi
 
 sync-wireguard-go:
+  tags:
+    - shared-medium
   rules:
     - if: '$OPENSOURCE_GO'
       when: always
