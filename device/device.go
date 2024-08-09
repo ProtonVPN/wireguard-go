@@ -180,7 +180,7 @@ func (device *Device) changeState(want deviceState) (err error) {
 // upLocked attempts to bring the device up and reports whether it succeeded.
 // The caller must hold device.state.mu and is responsible for updating device.state.state.
 func (device *Device) upLocked() error {
-	device.handshakeStateChan <- HandshakeInit
+	device.UpdateHandshakeState(HandshakeInit)
 	if err := device.BindUpdate(); err != nil {
 		device.log.Errorf("Unable to update bind: %v", err)
 		return err
@@ -403,6 +403,13 @@ func (device *Device) Close() {
 	device.log.Verbosef("Device closed")
 	close(device.closed)
 	close(device.handshakeStateChan)
+}
+
+func (device *Device) UpdateHandshakeState(state HandshakeState) {
+	select {
+	case device.handshakeStateChan <- state:
+	case <- device.closed:
+	}
 }
 
 func (device *Device) Wait() chan struct{} {
