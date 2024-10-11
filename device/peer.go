@@ -72,8 +72,6 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 		return nil, errors.New("device closed")
 	}
 
-	atomic.AddUint32(&nextPeerID, 1)
-
 	// lock resources
 	device.staticIdentity.RLock()
 	defer device.staticIdentity.RUnlock()
@@ -96,7 +94,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.queue.outbound = newAutodrainingOutboundQueue(device)
 	peer.queue.inbound = newAutodrainingInboundQueue(device)
 	peer.queue.staged = make(chan *QueueOutboundElement, QueueStagedSize)
-	peer.peerID = atomic.LoadUint32(&nextPeerID)
+	peer.peerID = atomic.AddUint32(&nextPeerID, 1)
 
 	// map public key
 	_, ok := device.peers.keyMap[pk]
