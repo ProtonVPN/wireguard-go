@@ -60,7 +60,7 @@ func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device,
 		ep:             channel.New(1024, uint32(mtu), ""),
 		stack:          stack.New(opts),
 		events:         make(chan tun.Event, 10),
-		incomingPacket: make(chan *bufferv2.View),
+		incomingPacket: make(chan *bufferv2.View, 1000),
 		dnsServers:     dnsServers,
 		mtu:            mtu,
 	}
@@ -148,7 +148,10 @@ func (tun *netTun) WriteNotify() {
 	view := pkt.ToView()
 	pkt.DecRef()
 
-	tun.incomingPacket <- view
+	select {
+		case tun.incomingPacket <- view:
+		default:
+	}
 }
 
 func (tun *netTun) Flush() error {
