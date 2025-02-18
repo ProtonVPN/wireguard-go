@@ -117,7 +117,7 @@ func (bind *StdNetBindTcp) upgradeToTls() error {
 
 	conn := tls.UClient(bind.tcp, tlsConf, hellos[nextHelloIdx.Load()])
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	bind.log.Verbosef("TLS: Starting handshake")
+	bind.log.Verbosef("TLS: Starting handshake hello=%v", nextHelloIdx.Load())
 	err := conn.Handshake()
 	bind.log.Verbosef("TLS: Handshake result: %v", err)
 	conn.SetDeadline(time.Time{})
