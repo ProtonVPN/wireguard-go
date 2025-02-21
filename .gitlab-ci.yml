@@ -7,6 +7,8 @@ sync-wireguard-go:
   tags:
     - shared-medium
   rules:
+    - if: $CI_COMMIT_BRANCH == "release/android"
+      when: manual
     - if: '$OPENSOURCE_GO'
       when: always
     - when: never
