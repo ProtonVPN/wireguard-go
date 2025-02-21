@@ -1,5 +1,5 @@
 default:
-  image: ${CI_REGISTRY}/android/shared/docker-android/oci-ndk:v2.0.0
+  image: ${PROTON_CI_REGISTRY}/android-shared/docker-android/oci-ndk:v2.1.7
   before_script:
     - if [[ -f /load-env.sh ]]; then source /load-env.sh; fi
 
