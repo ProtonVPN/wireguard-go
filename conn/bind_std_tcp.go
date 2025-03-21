@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 
 	tls "github.com/refraction-networking/utls"
+	server_name_utils "golang.zx2c4.com/wireguard/conn/server_name_utils"
 )
 
 var lastErrorTimestamp time.Time
@@ -55,16 +56,24 @@ type StdNetBindTcp struct {
 	log           *Logger
 	errorChan     chan<- error
 	protectSocket func(fd int) int
+	serverNameStrategy server_name_utils.ServerNameStrategy
 
 	tunsafe *TunSafeData
 }
 
 //goland:noinspection GoUnusedExportedFunction
-func CreateStdNetBind(socketType string, log *Logger, errorChan chan<- error, protectSocket func(fd int) int) Bind {
+func CreateStdNetBind(
+	socketType string,
+	serverNameStrategy server_name_utils.ServerNameStrategy,
+	log *Logger,
+	errorChan chan<- error,
+	protectSocket func(fd int) int,
+) Bind {
 	if socketType == "udp" {
 		return NewStdNetBind(protectSocket)
 	} else {
-		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log, errorChan: errorChan, protectSocket: protectSocket}
+		return &StdNetBindTcp{tunsafe: NewTunSafeData(), useTls: socketType == "tls", log: log,
+			errorChan: errorChan, protectSocket: protectSocket, serverNameStrategy: serverNameStrategy}
 	}
 }
 
@@ -109,15 +118,16 @@ func dialTcp(addr string, protectSocket func(fd int) int) (*net.TCPConn, int, er
 	return conn, taddr.Port, nil
 }
 
-func (bind *StdNetBindTcp) upgradeToTls() error {
+func (bind *StdNetBindTcp) upgradeToTls(addr string) error {
+	serverName := server_name_utils.ServerNameFor(bind.serverNameStrategy, addr)
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
-		ServerName:         randomServerName(),
+		ServerName:         serverName,
 	}
 
 	conn := tls.UClient(bind.tcp, tlsConf, hellos[nextHelloIdx.Load()])
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	bind.log.Verbosef("TLS: Starting handshake hello=%v", nextHelloIdx.Load())
+	bind.log.Verbosef("TLS: Starting handshake hello=%v name=%v", nextHelloIdx.Load(), serverName)
 	err := conn.Handshake()
 	bind.log.Verbosef("TLS: Handshake result: %v", err)
 	conn.SetDeadline(time.Time{})
@@ -146,7 +156,7 @@ func (bind *StdNetBindTcp) Open(uport uint16) ([]ReceiveFunc, uint16, error) {
 	return []ReceiveFunc{bind.makeReceiveFunc()}, uport, nil
 }
 
-func (bind *StdNetBindTcp) initTcp() error {
+func (bind *StdNetBindTcp) initTcp(addr string) error {
 	var err error
 
 	if bind.tcp != nil {
@@ -155,7 +165,7 @@ func (bind *StdNetBindTcp) initTcp() error {
 
 	var tcp *net.TCPConn
 
-	tcp, _, err = dialTcp(bind.endpoint.DstToString(), bind.protectSocket)
+	tcp, _, err = dialTcp(addr, bind.protectSocket)
 	bind.log.Verbosef("TCP dial result: %v", err)
 	if err != nil {
 		bind.onSocketError(err)
@@ -205,8 +215,9 @@ func (bind *StdNetBindTcp) getConn() (net.Conn, error) {
 }
 
 func (bind *StdNetBindTcp) getConnInternal() (net.Conn, error) {
+	addr := bind.endpoint.DstToString()
 	if bind.tcp == nil {
-		err := bind.initTcp()
+		err := bind.initTcp(addr)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +226,7 @@ func (bind *StdNetBindTcp) getConnInternal() (net.Conn, error) {
 		return bind.tcp, nil
 	}
 	if bind.tls == nil {
-		err := bind.upgradeToTls()
+		err := bind.upgradeToTls(addr)
 		if err != nil {
 			bind.closeInternal()
 			return nil, err

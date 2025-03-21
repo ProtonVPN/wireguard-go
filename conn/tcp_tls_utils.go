@@ -21,12 +21,8 @@ package conn
 
 import (
 	"bytes"
-	cryptoRand "crypto/rand"
 	"encoding/binary"
 	"errors"
-	"math/big"
-	"math/rand"
-	"time"
 )
 
 var wgDataPrefix = []byte{4, 0, 0, 0}
@@ -44,7 +40,6 @@ type TunSafeData struct {
 	wgRecvCount  uint64
 }
 
-var topLevelDomains = []string{"com", "net", "org", "it", "fr", "me", "ru", "cn", "es", "tr", "top", "xyz", "info"}
 
 func NewTunSafeData() *TunSafeData {
 	return &TunSafeData{
@@ -149,27 +144,4 @@ func wgToTunSafeData(wgPacket []byte) []byte {
 	copy(result[tunSafeHeaderSize:], wgPacket[wgDataHeaderSize:])
 
 	return result
-}
-
-func randomServerName() string {
-	charNum := int('z') - int('a') + 1
-	size := 3 + randInt(10)
-	name := make([]byte, size)
-	for i := range name {
-		name[i] = byte(int('a') + randInt(charNum))
-	}
-	return string(name) + "." + randItem(topLevelDomains)
-}
-
-func randItem(list []string) string {
-	return list[randInt(len(list))]
-}
-
-func randInt(n int) int {
-	size, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(n)))
-	if err == nil {
-		return int(size.Int64())
-	}
-	rand.Seed(time.Now().UnixNano())
-	return rand.Intn(n)
 }
