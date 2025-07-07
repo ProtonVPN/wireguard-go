@@ -1,15 +1,13 @@
 module golang.zx2c4.com/wireguard
 
-go 1.24
-
-toolchain go1.24.4
+go 1.23.4
 
 require (
-	github.com/refraction-networking/utls v1.7.3
+	github.com/refraction-networking/utls v1.6.7
 	github.com/stretchr/testify v1.8.0
-	golang.org/x/crypto v0.36.0
-	golang.org/x/net v0.38.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/crypto v0.21.0
+	golang.org/x/net v0.23.0
+	golang.org/x/sys v0.18.0
 	golang.zx2c4.com/wintun v0.0.0-20211104114900-415007cec224
 	gvisor.dev/gvisor v0.0.0-20221203005347-703fd9b7fbc0
 )
@@ -21,7 +19,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.0.6 // indirect
-	github.com/cloudflare/circl v1.5.0 // indirect
+	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
