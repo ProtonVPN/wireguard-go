@@ -42,6 +42,7 @@ var hellos = []tls.ClientHelloID {
 	tls.HelloChrome_Auto,
 	tls.HelloChrome_120_PQ,
 	tls.HelloChrome_115_PQ,
+	tls.HelloChrome_133,
 }
 
 type StdNetBindTcp struct {
